@@ -4,23 +4,18 @@ This repository is intended as a minimal, hackable and readable example to load 
 In order to download the checkpoints and tokenizer, fill this [google form](https://forms.gle/jk851eBVbX1m5TAv5)
 
 ### Setup
-In a conda env with pytorch / cuda available, run
 ```
-pip install -r requirements.txt
+conda install -r requirements.txt
 ```
-Then in this repository
+
+Then, in this repository
 ```
 pip install -e .
 ```
 
-If you are using MPS commit, use these to disable mps backend memory limit + fallback
+To run:
 ```
-export PYTORCH_ENABLE_MPS_FALLBACK=1
-export PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0
-```
-
-```
-torchrun --nproc_per_node 1 example.py --ckpt_dir $TARGET_FOLDER/model_size --tokenizer_path $TARGET_FOLDER/tokenizer.model
+torchrun --nproc_per_node $MP example.py --ckpt_dir $TARGET_FOLDER/model_size --tokenizer_path $TARGET_FOLDER/tokenizer.model
 ```
 
 Different models require different MP values:

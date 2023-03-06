@@ -1,4 +1,4 @@
-torch
+pytorch
 fairscale
 fire
 sentencepiece

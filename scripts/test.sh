@@ -3,14 +3,14 @@
 
 #SBATCH --job-name=test-llama
 #SBATCH --output=test-llama.log
-#SBATCH --mem=128G
+#SBATCH --mem=32G
 #SBATCH --partition=day
 #SBATCH --time=02:00:00
 
 
 module load miniconda
 
-source activate llama
+source activate /gpfs/gibbs/project/frank/ref4/shared/llama-cpu-language-modeling/
 
 torchrun \
 	--nproc_per_node 1 \

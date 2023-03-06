@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the GNU General Public License version 3.
 
-from typing import Tuple
+from typing import *
 import os
 import sys
 import torch
@@ -102,15 +102,14 @@ def load_dataset(
 
 def preprocess_dataset(
     dataset: List[str], 
-    tokenizer: AutoTokenizer
+    tokenizer: Tokenizer
 ) -> 'Dataset':
     '''
     Formats the dataset for use with a T5ForConditionalGeneration model.
     
     params:
-        dataset (Dataset)           : a huggingface dataset. Must contain a "test" split,
-                                      with examples in the "text" column.
-        tokenizer (AutoTokenizer)   : the tokenizer to use to prepare the examples for the model.
+        dataset (Dataset)           : a list of strings to use as prompts for the model
+        tokenizer (Tokenizer)   	: the tokenizer to use to prepare the examples for the model.
     
     returns:
         Dataset                     : the dataset formatted for use with a T5ForConditionalGeneration model.
@@ -192,7 +191,7 @@ def evaluate_example(
     )
 
 def get_eval_token_ids(
-    tokenizer: AutoTokenizer,
+    tokenizer: Tokenizer,
     eval_tokens: List[List[str]]
 ) -> List[List[int]]:
     '''
@@ -218,7 +217,7 @@ def get_eval_token_ids(
     return eval_token_ids
 
 def check_ids(
-    tokenizer: AutoTokenizer,
+    tokenizer: Tokenizer,
     eval_token_ids: List[List[int]],
 ) -> None:
     # check that eval tokens make sense

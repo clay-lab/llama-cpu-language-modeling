@@ -250,7 +250,7 @@ def evaluate_lm_batch(
     breakpoint()
     for input_num, input_seq, pred_token, tokens, token_ids, score, example_metadata in records:
         metrics.extend(
-            [Y
+            [
                 {
                     'item': input_num,
                     'input_text': generator.tokenizer.decode(input_seq).replace(f'{generator.tokenizer.bos_id}', '').replace(f'{generator.tokenizer.eos_id}', '').strip().replace('  ', ' '),

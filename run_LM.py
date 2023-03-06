@@ -4,6 +4,7 @@
 from typing import *
 import os
 import sys
+import gzip
 import torch
 import torch.nn.functional as F
 import fire
@@ -45,7 +46,7 @@ def load(
     tokenizer_path: str, 
     local_rank: int, 
     world_size: int,
-    max_seq_len: int = 1,
+    max_seq_len: int = 32, #TODO: set this dynamically
     max_batch_size: int = 1,
 ) -> LLaMA:
     start_time = time.time()
@@ -68,7 +69,7 @@ def load(
 
     logger.info("Loading model arguments...")
     model_args: ModelArgs = ModelArgs(
-        max_seq_len, max_batch_size, **params)
+        max_seq_len=max_seq_len, max_batch_size=max_batch_size, **params)
 
     logger.info("Creating tokenizer...")
     tokenizer = Tokenizer(model_path=tokenizer_path)
@@ -85,10 +86,8 @@ def load(
     logger.info(f"Loaded in {time.time() - _start_time:.2f} seconds")
 
     _start_time = time.time()
-    logger.info("Creating LLaMA generator...", end="")
+    logger.info("Creating LLaMA generator...")
     generator = LLaMA(model, tokenizer)
-    logger.info(f"done in {time.time() - _start_time:.2f} seconds")
-
     logger.info(f"Loaded in {time.time() - start_time:.2f} seconds")
     return generator
 
@@ -114,7 +113,7 @@ def preprocess_dataset(
     returns:
         Dataset                     : the dataset formatted for use with a T5ForConditionalGeneration model.
     ''' 
-    def preprocess_function(example: 'Batch') -> Dict:
+    def preprocess_function(example: str) -> torch.Tensor:
         '''Tokenizes a string input.'''
         model_inputs = tokenizer.encode(example, bos=True, eos=False)
         return model_inputs
@@ -128,13 +127,14 @@ def evaluate_language_modeling(generator, dataset, output_dir):
         # return
         pass
     
-    with gzip.open(data_args.test_file.replace('.txt.gz', '_metadata.json.gz'), 'rt', encoding='utf-8') as in_file:
-        metadata = [json.loads(l) for l in in_file.readlines()]
-    
+    # with gzip.open(data_args.test_file.replace('.txt.gz', '_metadata.json.gz'), 'rt', encoding='utf-8') as in_file:
+    #    metadata = [json.loads(l) for l in in_file.readlines()]
+    metadata = [{'eval_tokens': ['is', 'are']}]
+
     os.makedirs(output_dir, exist_ok=True)
     
     metrics = []
-    for i, (example, ex_metadata) in enumerate(zip(dataset, ex_metadata)):
+    for i, (example, ex_metadata) in enumerate(zip(dataset, metadata)):
         eval_tokens = ex_metadata['eval_tokens']
         
         metrics.extend(evaluate_example(
@@ -155,7 +155,7 @@ def evaluate_language_modeling(generator, dataset, output_dir):
 
 def evaluate_example(
     generator: LLaMA,
-    inputs: List[torch.Tensor],
+    inputs: List[List[int]],
     input_nums: List[int] = None,
     eval_tokens: List[List[str]] = None,
     batch_metadata: List[Dict] = None,
@@ -181,6 +181,8 @@ def evaluate_example(
         eval_tokens=eval_tokens
     )
     
+    inputs = torch.tensor(inputs).long()
+    
     return evaluate_lm_batch(
         generator=generator,
         inputs=inputs,
@@ -198,26 +200,17 @@ def get_eval_token_ids(
     Get the eval token ids depending on their position
     in the input sequence (beginning of sentence or not).
     '''
-    eval_token_ids = []
-    for token_indices, tokens in zip(pred_token_indices, eval_tokens):
-        for token_index in token_indices:
-                eval_token_ids.append(
-                    tokenizer(
-                        [f' {t}' for t in tokens], 
-                        add_special_tokens=False, 
-                        return_attention_mask=False
-                    )['input_ids']
-                )
+    eval_token_ids = [[tokenizer.encode(t, bos=False, eos=False) for t in tokens] for tokens in eval_tokens]
     
     # check that the eval tokens are single tokens
-    check_ids(tokenizer=tokenizer, eval_tokens=eval_tokens, eval_token_ids=eval_token_ids)
+    check_ids(eval_tokens=eval_tokens, eval_token_ids=eval_token_ids)
     
     eval_token_ids = [[id for t in token_ids for id in t] for token_ids in eval_token_ids]
     
     return eval_token_ids
 
 def check_ids(
-    tokenizer: Tokenizer,
+	eval_tokens: List[List[str]],
     eval_token_ids: List[List[int]],
 ) -> None:
     # check that eval tokens make sense
@@ -232,7 +225,7 @@ def check_ids(
 
 def evaluate_lm_batch(
     generator: LLaMA,
-    inputs: torch.Tensor,
+    inputs: List[List[int]],
     input_nums: List[int],
     eval_tokens: List[List[str]],
     eval_token_ids: List[List[int]],
@@ -241,12 +234,13 @@ def evaluate_lm_batch(
     with torch.no_grad():
         batch_outputs = generator(tokens=inputs, start_pos=0)
     
+    breakpoint()
     batch_scores = torch.stack([t[i][:len(generator.tokenizer.n_words)] for t, i in batch_outputs])
     batch_logprobs = F.log_softmax(batch_scores, dim=-1)
     
     metrics = []
     records = zip(input_nums, inputs, batch_outputs, eval_tokens, eval_token_ids, batch_logprobs, batch_metadata)
-    breakpoint()
+    
     for input_num, input_seq, pred_token, tokens, token_ids, score, example_metadata in records:
         metrics.extend(
             [

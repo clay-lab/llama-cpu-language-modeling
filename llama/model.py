@@ -32,7 +32,10 @@ class ModelArgs:
     
     # for language modeling, we're just caring about the next token for now
     max_batch_size: int = 1
-    max_seq_len: int = 1
+    # TODO: we will need to set this dynamically based on the maximum length of an example
+    # in the dataset
+    # so load the dataset and tokenizer first
+    max_seq_len: int = 32
 
 
 class RMSNorm(torch.nn.Module):
@@ -146,7 +149,7 @@ class Attention(nn.Module):
     ):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
-
+        
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
@@ -157,6 +160,7 @@ class Attention(nn.Module):
         freqs_cis = freqs_cis.to('cpu')
 
         # print("---- Applying rotary embedding")
+        
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         # print("---- Converting back to mps to continue computation")

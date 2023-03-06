@@ -234,7 +234,6 @@ def evaluate_lm_batch(
     with torch.no_grad():
         batch_outputs = generator(tokens=inputs, start_pos=0)
     
-    breakpoint()
     batch_scores = torch.stack([t[i][:len(generator.tokenizer.n_words)] for t, i in batch_outputs])
     batch_logprobs = F.log_softmax(batch_scores, dim=-1)
     
@@ -246,8 +245,8 @@ def evaluate_lm_batch(
             [
                 {
                     'item': input_num,
-                    'input_text': generator.tokenizer.decode(input_seq).replace(f'{generator.tokenizer.bos_id}', '').replace(f'{generator.tokenizer.eos_id}', '').strip().replace('  ', ' '),
-                    'pred_token': tokenizer.decode(torch.argmax(pred_token, dim=-1)),
+                    'input_text': generator.tokenizer.decode(input_seq.tolist()),
+                    'pred_token': generator.tokenizer.decode(torch.argmax(pred_token, dim=-1).tolist()),
                     'token': token,
                     'token_id': token_id,
                     'logprob': score[token_id].item(),

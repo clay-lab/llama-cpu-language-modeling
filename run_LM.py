@@ -250,7 +250,7 @@ def evaluate_lm_batch(
     breakpoint()
     for input_num, input_seq, pred_token, tokens, token_ids, score, example_metadata in records:
         metrics.extend(
-            [
+            [Y
                 {
                     'item': input_num,
                     'input_text': generator.tokenizer.decode(input_seq).replace(f'{generator.tokenizer.bos_id}', '').replace(f'{generator.tokenizer.eos_id}', '').strip().replace('  ', ' '),
@@ -282,9 +282,9 @@ def main(
     output_dir = os.path.join('outputs', os.path.split(ckpt_dir)[-1])
     evaluate_language_modeling(generator=generator, dataset=dataset, output_dir=output_dir)
     
-    for example in dataset: 
-        results = generator.generate(
-            prompts, max_gen_len=30, temperature=temperature, top_p=top_p)
+    # for example in dataset: 
+    #     results = generator.generate(
+    #         prompts, max_gen_len=30, temperature=temperature, top_p=top_p)
     
 if __name__ == "__main__":
     fire.Fire(main)

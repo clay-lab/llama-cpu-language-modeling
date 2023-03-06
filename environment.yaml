@@ -1,0 +1,9 @@
+name: llama
+
+dependencies:
+  - pytorch::pytorch
+  - sentencepiece
+  - fairscale
+  - fire
+  - tqdm
+  - pandas

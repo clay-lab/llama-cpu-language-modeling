@@ -8,13 +8,19 @@ import torch
 from llama.tokenizer import Tokenizer
 from llama.model import Transformer
 
+from tqdm import tqdm
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LLaMA:
     def __init__(self, model: Transformer, tokenizer: Tokenizer):
         self.model = model
-        # self.model.to(torch.device("mps"))
         self.tokenizer = tokenizer
-
+    
+    def __call__(self, tokens: torch.Tensor, start_pos: int):
+        return self.model.forward(tokens=tokens, start_pos=start_pos)
+    
     def generate(
         self,
         prompts: List[str],
@@ -33,19 +39,20 @@ class LLaMA:
         max_prompt_size = max([len(t) for t in prompt_tokens])
 
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
-        print(f"Forwarding {total_len} times")
+        logger.info(f"Forwarding {total_len} times")
 
         tokens = torch.full(
             (bsz, total_len), self.tokenizer.pad_id, device=torch.device("cpu")).long()
+        
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t).long()
 
         input_text_mask = tokens != self.tokenizer.pad_id
         start_pos = min_prompt_size
         prev_pos = 0
-        for cur_pos in range(start_pos, total_len):
-            # print(f"Feeding tensors forward #{cur_pos}")
-            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+        for cur_pos in tqdm(range(start_pos, total_len), total=len(list(range(start_pos, total_len)))):
+            breakpoint()
+            logits = self.forward(tokens[:, prev_pos:cur_pos], prev_pos)
 
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)

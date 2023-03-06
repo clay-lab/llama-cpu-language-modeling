@@ -2,12 +2,13 @@
 # This software may be used and distributed according to the terms of the GNU General Public License version 3.
 
 from sentencepiece import SentencePieceProcessor
-from logging import getLogger
 from typing import List
+
+import logging
 import os
 
 
-logger = getLogger()
+logger = logging.getLogger(__name__)
 
 
 class Tokenizer:

@@ -16,6 +16,10 @@ from fairscale.nn.model_parallel.layers import (
     ColumnParallelLinear,
 )
 
+from tqdm import tqdm
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelArgs:
@@ -25,9 +29,10 @@ class ModelArgs:
     vocab_size: int = -1  # defined later by tokenizer
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     norm_eps: float = 1e-5
-
-    max_batch_size: int = 32
-    max_seq_len: int = 1024
+    
+    # for language modeling, we're just caring about the next token for now
+    max_batch_size: int = 1
+    max_seq_len: int = 1
 
 
 class RMSNorm(torch.nn.Module):
@@ -92,7 +97,7 @@ def apply_rotary_emb(
     # xq_out = torch.cat([xq_out_real, xq_out_imag], dim=-1)
     # xk_out = torch.cat([xk_out_real, xk_out_imag], dim=-1)
 
-    return xq_out, xk_out
+    # return xq_out, xk_out
 
 
 class Attention(nn.Module):
@@ -132,7 +137,13 @@ class Attention(nn.Module):
              self.n_local_heads, self.head_dim)
         )
 
-    def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
+    def forward(
+        self, 
+        x: torch.Tensor, 
+        start_pos: int, 
+        freqs_cis: torch.Tensor, 
+        mask: Optional[torch.Tensor]
+    ):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
@@ -145,7 +156,7 @@ class Attention(nn.Module):
         # xk = xk.to('cpu')
         freqs_cis = freqs_cis.to('cpu')
 
-        #print("---- Applying rotary embedding")
+        # print("---- Applying rotary embedding")
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         # print("---- Converting back to mps to continue computation")
@@ -220,7 +231,13 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
+    def forward(
+        self, 
+        x: torch.Tensor, 
+        start_pos: int, 
+        freqs_cis: torch.Tensor, 
+        mask: Optional[torch.Tensor]
+    ):
         h = x + \
             self.attention.forward(self.attention_norm(
                 x), start_pos, freqs_cis, mask)
@@ -235,23 +252,23 @@ class Transformer(nn.Module):
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
 
-        print("-- Creating embedding")
+        logger.info("Creating embedding")
         self.tok_embeddings = torch.nn.Embedding(
             params.vocab_size, params.dim
         )
 
         self.layers = torch.nn.ModuleList()
-        print(f"-- Creating transformer blocks ({params.n_layers})")
-        for layer_id in range(params.n_layers):
+        logger.info(f"Creating transformer blocks ({params.n_layers})")
+        for layer_id in tqdm(range(params.n_layers), total=params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
 
-        print("-- Adding output layers ")
+        logger.info("Adding output layers")
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(
             params.dim, params.vocab_size, bias=False
         )
 
-        print("-- Precomputing frequencies")
+        logger.info("Precomputing frequencies")
         self.freqs_cis = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
         )
@@ -269,9 +286,10 @@ class Transformer(nn.Module):
                               float("-inf"), device=tokens.device)
             mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
 
-        for layer in self.layers:
-            #print(f"-- Computing layer {layer.layer_id}")
+        logger.info('Running layers')
+        for layer in tqdm(self.layers):
             h = layer(h, start_pos, freqs_cis, mask)
+        
         h = self.norm(h)
         output = self.output(h[:, -1, :])  # only compute last logits
         return output.float()

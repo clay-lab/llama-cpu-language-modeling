@@ -10,7 +10,7 @@
 
 module load miniconda
 
-source activate llama
+source activate /gpfs/gibbs/project/frank/ref4/conda_envs/llama
 
 torchrun \
 	--nproc_per_node 1 \

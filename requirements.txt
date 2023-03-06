@@ -2,3 +2,4 @@ pytorch
 fairscale
 fire
 sentencepiece
+pandas

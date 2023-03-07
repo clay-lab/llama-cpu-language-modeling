@@ -225,7 +225,7 @@ def check_ids(
 
 def evaluate_lm_batch(
     generator: LLaMA,
-    inputs: List[List[int]],
+    inputs: torch.Tensor,
     input_nums: List[int],
     eval_tokens: List[List[str]],
     eval_token_ids: List[List[int]],
@@ -234,9 +234,9 @@ def evaluate_lm_batch(
     with torch.no_grad():
         batch_outputs = generator(tokens=inputs, start_pos=0)
     
-    batch_scores = torch.stack([t[i][:len(generator.tokenizer.n_words)] for t, i in batch_outputs])
+    batch_scores = torch.stack([t[:generator.tokenizer.n_words] for t in batch_outputs])
     batch_logprobs = F.log_softmax(batch_scores, dim=-1)
-    
+    breakpoint()
     metrics = []
     records = zip(input_nums, inputs, batch_outputs, eval_tokens, eval_token_ids, batch_logprobs, batch_metadata)
     
@@ -254,7 +254,7 @@ def evaluate_lm_batch(
                 } for token, token_id in zip(tokens, token_ids)
             ]
         )
-    
+    breakpoint()
     return metrics
 
 def main(

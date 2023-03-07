@@ -10,10 +10,10 @@
 
 module load miniconda
 
-source activate /gpfs/gibbs/project/frank/ref4/shared/llama-cpu-language-modeling/
+source activate /gpfs/gibbs/project/frank/ref4/conda_envs/llama/
 
 torchrun \
 	--nproc_per_node 1 \
 	example.py \
-	--ckpt_dir ../llama-checkpoints/7B \
-	--tokenizer_path ../llama-checkpoints/tokenizer.model
+	--ckpt_dir llama-checkpoints/7B \
+	--tokenizer_path llama-checkpoints/tokenizer.model

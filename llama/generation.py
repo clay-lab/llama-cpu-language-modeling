@@ -36,6 +36,7 @@ class LLaMA:
         keep_logits = torch.tensor(())
         
         for cur_pos in tqdm(range(start_pos, total_len), total=len(list(range(start_pos, total_len)))):
+            breakpoint()
             _logits = self.model.forward(tokens=tokens[:, prev_pos:cur_pos], start_pos=prev_pos)
             
             # this gets run the first time through the loop

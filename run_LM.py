@@ -6,6 +6,7 @@ import os
 import sys
 import gzip
 import torch
+from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import fire
 import time
@@ -36,6 +37,21 @@ logging.basicConfig(
 # not stripped)
 MASK_TOKEN: str = '<extra_id_0>'
 
+class Timer():
+    '''
+    Prints a message about how long a block of code takes to run.
+    '''
+    def __init__(self, log_fn=print):
+        self.log_fn = log_fn
+    
+    def __enter__(self):
+        self._start_time = time.time()
+    
+    def __exit__(self):
+        self.log_fn(
+            f'Completed in {time.time() - self._start_time:.2f} seconds'
+        )
+
 def setup_model_parallel() -> Tuple[int, int]:
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
     world_size = int(os.environ.get("WORLD_SIZE", -1))
@@ -48,54 +64,85 @@ def setup_model_parallel() -> Tuple[int, int]:
     torch.manual_seed(1)
     return local_rank, world_size
 
-def load(
-    ckpt_dir: str, 
-    tokenizer_path: str, 
+def load_tokenizer(
+    tokenizer_path: str,
+) -> Tokenizer:
+    '''
+    Loads the LLaMA tokenizer.
+    We do this separately so we can tokenize
+    the dataset before loading the model, and thus
+    dynamically adjust the necessary cache as required.
+    '''
+    logger.info('Creating tokenizer...')
+    tokenizer = Tokenizer(model_path=tokenizer_path)
+        
+    return tokenizer
+
+def load_llama(
+    ckpt_dir: str,
+    tokenizer: Tokenizer,
     local_rank: int, 
     world_size: int,
-    max_seq_len: int = 32, #TODO: set this dynamically
+    max_seq_len: int,
     max_batch_size: int = 1,
 ) -> LLaMA:
-    start_time = time.time()
-
-    logger.info("Locating checkpoints")
-    checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
+    '''
+    Loads and returns a LLaMA generator.
+    
+    params:
+        ckpt_dir (str): the location of the directory containing the LLaMA checkpoint
+        tokenizer (Tokenizer): the tokenizer for the model 
+        dataset (List[str]): the dataset to be used for evaluation
+                             this is used to dynamically set the max_seq_len, which must
+                             be at least the length of the longest (tokenized) input seq
+                             in words. we do this here to avoid setting an overly large
+                             cache size when creating the ModelArgs
+        local_rank (int): the local rank of the process
+        world_size (int): the world size (i.e., how many processes total)
+        max_seq_len (int): the maximum sequence length that can be generated.
+                           must be at least the length of the longest (tokenized) input sequence
+        max_batch_size (int): at most this many examples will be run in a batch
+    
+    returns:
+        LLaMA: the LLaMA generator
+    '''
+    logger.info('Locating checkpoints')
+    checkpoints = sorted(Path(ckpt_dir).glob('*.pth'))
     assert (
         world_size == len(checkpoints)
-    ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {world_size}"
-
-    logger.info(f"Found MP={len(checkpoints)} checkpoints")
+    ), f'Loading a checkpoint for MP={len(checkpoints)} but world size is {world_size}'
+    
+    logger.info(f'Found MP={len(checkpoints)} checkpoints')
     ckpt_path = checkpoints[local_rank]
-
-    logger.info("Creating checkpoint instance...")
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
-
-    logger.info("Grabbing params...")
-    with open(Path(ckpt_dir) / "params.json", "r") as f:
+    
+    logger.info('Creating checkpoint instance...')
+    checkpoint = torch.load(ckpt_path, map_location='cpu')
+    
+    logger.info('Grabbing params...')
+    with open(Path(ckpt_dir)/'params.json', 'r') as f:
         params = json.loads(f.read())
-
-    logger.info("Loading model arguments...")
-    model_args: ModelArgs = ModelArgs(
-        max_seq_len=max_seq_len, max_batch_size=max_batch_size, **params)
-
-    logger.info("Creating tokenizer...")
-    tokenizer = Tokenizer(model_path=tokenizer_path)
-    model_args.vocab_size = tokenizer.n_words
-
-    logger.info("Creating transformer...")
+    
+    logger.info('Loading model arguments...')
+    model_args = ModelArgs(
+        max_seq_len=max_seq_len, 
+        max_batch_size=max_batch_size,
+        vocab_size=tokenizer.n_words, 
+        **params
+    )
+    
+    logger.info('Creating transformer...')
     torch.set_default_tensor_type(torch.BFloat16Tensor)
     model = Transformer(model_args)
-
-    logger.info("Loading checkpoint to model...")
-    _start_time = time.time()
-    torch.set_default_tensor_type(torch.BFloat16Tensor)
-    model.load_state_dict(checkpoint, strict=False)
-    logger.info(f"Loaded in {time.time() - _start_time:.2f} seconds")
-
-    _start_time = time.time()
-    logger.info("Creating LLaMA generator...")
-    generator = LLaMA(model, tokenizer)
-    logger.info(f"Loaded in {time.time() - start_time:.2f} seconds")
+    
+    logger.info('Loading checkpoint to model...')
+    with Timer(logger.info):
+        torch.set_default_tensor_type(torch.BFloat16Tensor)
+        model.load_state_dict(checkpoint, strict=False)
+    
+    logger.info('Creating LLaMA generator...')
+    with Timer(logger.info):
+        generator = LLaMA(model, tokenizer)
+    
     return generator
 
 def load_dataset(
@@ -117,7 +164,7 @@ def load_dataset(
 def preprocess_dataset(
     dataset: List[str], 
     tokenizer: Tokenizer
-) -> 'Dataset':
+) -> torch.Tensor:
     '''
     Formats the dataset for use with a T5ForConditionalGeneration model.
     
@@ -133,13 +180,45 @@ def preprocess_dataset(
         model_inputs = tokenizer.encode(example, bos=True, eos=False)
         return model_inputs
     
-    return torch.Tensor([preprocess_function(example) for example in dataset]).long()
+    def pad_tensor(t: torch.Tensor, pad: int, dim: int = -1) -> torch.Tensor:
+        '''
+        Pads a tensor to length pad in dim dim.
+        From https://discuss.pytorch.org/t/dataloader-for-various-length-of-data/6418/8
+        
+            params:
+                t (torch.Tensor): tensor to pad
+                pad (int)       : the size to pad to
+                dim (int)       : dimension to pad
+            
+            returns:
+                a new torch.Tensor padded to 'pad' in dimension 'dim'
+        '''
+        pad_size = list(t.shape)
+        pad_size[dim] = pad - t.size(dim)
+        return torch.cat([
+            t, 
+            torch.full(
+                size=pad_size, 
+                fill_value=tokenizer.pad_id, 
+                dtype=t.dtype, 
+                device=t.device
+            )
+        ], dim=dim)
+    
+    dataset = [torch.tensor(preprocess_function(example)) for example in dataset]
+    
+    max_seq_len = max(len(example) for example in dataset) + 1
+    
+    dataset = torch.stack([pad_tensor(t=t, pad=max_seq_len, dim=-1) for t in dataset])
+    
+    return dataset
 
 def evaluate_language_modeling(
     generator: LLaMA, 
     dataset_path: str, 
     output_dir: str,
-):
+    max_batch_size: int = 1,
+) -> None:
     output_file = os.path.join(output_dir, 'language_modeling_results.csv.gz')
     
     if os.path.exists(output_file):
@@ -153,16 +232,25 @@ def evaluate_language_modeling(
     
     os.makedirs(output_dir, exist_ok=True)
     
+    dataloader = DataLoader(dataset, batch_size=max_batch_size)
+    
+    n_observed_examples = 0
     metrics = []
-    for i, (example, ex_metadata) in enumerate(zip(dataset, metadata)):
-        eval_tokens = ex_metadata['eval_tokens']
+    for inputs in tqdm(dataloader):
+        n_examples_in_batch = inputs.shape[0]
         
-        metrics.extend(evaluate_example(
+        # use this as a unique input identifier
+        input_nums = range(n_observed_examples, n_observed_examples + n_examples_in_batch)
+        
+        batch_metadata = metadata[(n_observed_examples - n_examples_in_batch):n_observed_examples]
+        eval_tokens = [d['eval_tokens'] for d in batch_metadata]
+        
+        metrics.extend(evaluate_batch(
             generator=generator,
-            inputs=[example],
-            input_nums=[i],
-            eval_tokens=[eval_tokens],
-            batch_metadata=[ex_metadata]
+            inputs=inputs,
+            input_nums=input_nums,
+            eval_tokens=eval_tokens,
+            batch_metadata=batch_metadata
         ))
     
     metrics = pd.DataFrame(metrics)
@@ -173,14 +261,14 @@ def evaluate_language_modeling(
     
     metrics.to_csv(output_file, index=False, na_rep='NaN')
 
-def evaluate_example(
+def evaluate_batch(
     generator: LLaMA,
     inputs: torch.Tensor,
     input_nums: List[int] = None,
     eval_tokens: List[List[str]] = None,
     batch_metadata: List[Dict] = None,
-): 
-    '''Evaluate a single batch of inputs on the eval tokens, depending on the model type.'''
+) -> List[Dict]: 
+    '''Evaluate a single batch of inputs on the eval tokens.'''
     if input_nums is None:
         input_nums = range(len(inputs))
     
@@ -194,7 +282,7 @@ def evaluate_example(
         )
         
     if batch_metadata is None:
-        batch_metadata = {}
+        batch_metadata = [{} for _ in range(len(inputs))]
     
     eval_token_ids = get_eval_token_ids(
         tokenizer=generator.tokenizer,
@@ -279,15 +367,35 @@ def main(
     ckpt_dir: str, 
     tokenizer_path: str, 
     dataset_path: str,
-):
+    max_batch_size: int,
+) -> None:
     local_rank, world_size = setup_model_parallel()
     if local_rank > 0:
         sys.stdout = open(os.devnull, 'w')
-
-    generator = load(ckpt_dir, tokenizer_path, local_rank, world_size)
+    
+    dataset = load_dataset(dataset_path=dataset_path)
+    tokenizer = load_tokenizer(tokenizer_path=tokenizer_path)
+    
+    dataset = preprocess_dataset(dataset=dataset, tokenizer=tokenizer)
+    
+    max_seq_len = dataset.size()[-1]
+    
+    generator = load_llama(
+        ckpt_dir=ckpt_dir, 
+        tokenizer=tokenizer, 
+        max_seq_len=max_seq_len,
+        max_batch_size=max_batch_size,
+        local_rank=local_rank, 
+        world_size=world_size,
+    )
     
     output_dir = os.path.join('outputs', os.path.split(ckpt_dir)[-1])
-    evaluate_language_modeling(generator=generator, dataset=dataset, output_dir=output_dir)
+    evaluate_language_modeling(
+        generator=generator, 
+        dataset=dataset, 
+        max_batch_size=max_batch_size,
+        output_dir=output_dir,
+    )
     
-if __name__ == "__main__":
+if __name__ == '__main__':
     fire.Fire(main)

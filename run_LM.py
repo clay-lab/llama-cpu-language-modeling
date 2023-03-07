@@ -40,6 +40,10 @@ MASK_TOKEN: str = '<extra_id_0>'
 class Timer():
     '''
     Prints a message about how long a block of code takes to run.
+    
+    Usage:
+        with Timer(log_fn=...):
+            ...
     '''
     def __init__(self, log_fn=print):
         self.log_fn = log_fn
@@ -47,7 +51,7 @@ class Timer():
     def __enter__(self):
         self._start_time = time.time()
     
-    def __exit__(self):
+    def __exit__(self, type, value, traceback):
         self.log_fn(
             f'Completed in {time.time() - self._start_time:.2f} seconds'
         )
@@ -208,6 +212,7 @@ def preprocess_dataset(
     dataset = [torch.tensor(preprocess_function(example)) for example in dataset]
     
     max_seq_len = max(len(example) for example in dataset) + 1
+    logger.info(f'Maximum sequence length in dataset is {max_seq_len - 1} tokens')
     
     dataset = torch.stack([pad_tensor(t=t, pad=max_seq_len, dim=-1) for t in dataset])
     
@@ -242,7 +247,7 @@ def evaluate_language_modeling(
         # use this as a unique input identifier
         input_nums = range(n_observed_examples, n_observed_examples + n_examples_in_batch)
         
-        batch_metadata = metadata[(n_observed_examples - n_examples_in_batch):n_observed_examples]
+        batch_metadata = metadata[max(0, n_observed_examples - n_examples_in_batch):n_observed_examples]
         eval_tokens = [d['eval_tokens'] for d in batch_metadata]
         
         metrics.extend(evaluate_batch(

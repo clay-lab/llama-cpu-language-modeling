@@ -19,7 +19,63 @@ class LLaMA:
         self.tokenizer = tokenizer
     
     def __call__(self, tokens: torch.Tensor, start_pos: int):
-        return self.model.forward(tokens=tokens, start_pos=start_pos)
+        '''
+        Returns logits for the next token for each example
+        in a batch of tokens.
+        '''
+        min_prompt_size = min(min(t == self.tokenizer.pad_id).nonzero(as_tuple=True)[0] for t in tokens)
+        max_prompt_size = tokens.shape[-1]
+        
+        total_len = max_prompt_size + 1
+        
+        input_mask = tokens != self.tokenizer.pad_id
+        
+        start_pos = min_prompt_size
+        prev_pos = 0
+        
+        keep_logits = torch.tensor(())
+        
+        for cur_pos in tqdm(range(start_pos, total_len), total=len(list(range(start_pos, total_len)))):
+            _logits = self.model.forward(tokens=tokens[:, prev_pos:cur_pos], start_pos=prev_pos)
+            
+            # this gets run the first time through the loop
+            # to initialize the tensor we'll use to store
+            # the logits for the next token for each example
+            if keep_logits.shape[0] == 0:
+                keep_logits = _logits.clone()
+            
+            # if the prompts are of unequal length,
+            # we want to get the logits for the next position for each prompt
+            if not torch.all(input_mask):
+                # get the inputs for which we want the logits.
+                # these are the ones where the input_mask is False,
+                # because that corresponds to the previous token
+                # being the end of the input
+                keep = torch.where(
+                    torch.all(
+                        torch.stack((
+                            input_mask[:, cur_pos-1],
+                            input_mask[:, cur_pos] == False
+                        ))
+                    ), dim=-1
+                )
+                
+                keep_logits[keep] = _logits[keep].clone()
+                
+                # we only need to do this so we can keep generating for the
+                # longer sequences, the next token doesn't actually matter,
+                # so just use the eos token. it will always be replaced
+                # with the provided prompt for the longer sequences anyway
+                next_token = torch.full((_logits.shape[0],), self.tokenizer.eos_id)
+                
+                # only replace token if prompt has already been generated
+                next_token = torch.where(
+                    input_mask[:, cur_pos], tokens[:, cur_pos], next_token
+                )
+                tokens[:, cur_pos] = next_token
+                prev_pos = cur_pos
+        
+        return keep_logits
     
     def generate(
         self,
@@ -51,8 +107,7 @@ class LLaMA:
         start_pos = min_prompt_size
         prev_pos = 0
         for cur_pos in tqdm(range(start_pos, total_len), total=len(list(range(start_pos, total_len)))):
-            breakpoint()
-            logits = self.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
 
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)

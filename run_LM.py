@@ -29,6 +29,13 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# this marks the position of interest in our datasets
+# sentences will be stripped of everything including
+# and after this word. (we use these datasets also for
+# MLM and seq2seq tasks where the following context is
+# not stripped)
+MASK_TOKEN: str = '<extra_id_0>'
+
 def setup_model_parallel() -> Tuple[int, int]:
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
     world_size = int(os.environ.get("WORLD_SIZE", -1))
@@ -92,12 +99,20 @@ def load(
     return generator
 
 def load_dataset(
+    dataset_path: str,
 ) -> List[str]:
     '''
     To be replaced with a function
     that loads the data from disk
     '''
-    return ['The key to the cabinets']
+    with gzip.open(dataset_path, 'rt') as in_file:
+        dataset = in_file.readlines()
+    
+    # remove everything including + after the position of interest,
+    # since LLaMA models predict the next word
+    dataset = [example.split(MASK_TOKEN, 1)[0].strip() for example in dataset]
+    
+    return dataset
 
 def preprocess_dataset(
     dataset: List[str], 
@@ -118,19 +133,24 @@ def preprocess_dataset(
         model_inputs = tokenizer.encode(example, bos=True, eos=False)
         return model_inputs
     
-    return [preprocess_function(example) for example in dataset]
+    return torch.Tensor([preprocess_function(example) for example in dataset]).long()
 
-def evaluate_language_modeling(generator, dataset, output_dir):
+def evaluate_language_modeling(
+    generator: LLaMA, 
+    dataset_path: str, 
+    output_dir: str,
+):
     output_file = os.path.join(output_dir, 'language_modeling_results.csv.gz')
     
     if os.path.exists(output_file):
         # return
         pass
     
-    # with gzip.open(data_args.test_file.replace('.txt.gz', '_metadata.json.gz'), 'rt', encoding='utf-8') as in_file:
-    #    metadata = [json.loads(l) for l in in_file.readlines()]
-    metadata = [{'eval_tokens': ['is', 'are']}]
-
+    dataset = load_dataset(dataset_path)
+    
+    with gzip.open(dataset_path.replace('.txt.gz', '_metadata.json.gz'), 'rt', encoding='utf-8') as in_file:
+        metadata = [json.loads(l) for l in in_file.readlines()]
+    
     os.makedirs(output_dir, exist_ok=True)
     
     metrics = []
@@ -155,7 +175,7 @@ def evaluate_language_modeling(generator, dataset, output_dir):
 
 def evaluate_example(
     generator: LLaMA,
-    inputs: List[List[int]],
+    inputs: torch.Tensor,
     input_nums: List[int] = None,
     eval_tokens: List[List[str]] = None,
     batch_metadata: List[Dict] = None,
@@ -180,8 +200,6 @@ def evaluate_example(
         tokenizer=generator.tokenizer,
         eval_tokens=eval_tokens
     )
-    
-    inputs = torch.tensor(inputs).long()
     
     return evaluate_lm_batch(
         generator=generator,
@@ -236,7 +254,7 @@ def evaluate_lm_batch(
     
     batch_scores = torch.stack([t[:generator.tokenizer.n_words] for t in batch_outputs])
     batch_logprobs = F.log_softmax(batch_scores, dim=-1)
-    breakpoint()
+    
     metrics = []
     records = zip(input_nums, inputs, batch_outputs, eval_tokens, eval_token_ids, batch_logprobs, batch_metadata)
     
@@ -254,29 +272,22 @@ def evaluate_lm_batch(
                 } for token, token_id in zip(tokens, token_ids)
             ]
         )
-    breakpoint()
+    
     return metrics
 
 def main(
     ckpt_dir: str, 
     tokenizer_path: str, 
-    temperature: float = 0., 
-    top_p: float = 0.95
+    dataset_path: str,
 ):
     local_rank, world_size = setup_model_parallel()
     if local_rank > 0:
         sys.stdout = open(os.devnull, 'w')
 
     generator = load(ckpt_dir, tokenizer_path, local_rank, world_size)
-    dataset = load_dataset()
-    dataset = preprocess_dataset(dataset=dataset, tokenizer=generator.tokenizer)
     
     output_dir = os.path.join('outputs', os.path.split(ckpt_dir)[-1])
     evaluate_language_modeling(generator=generator, dataset=dataset, output_dir=output_dir)
-    
-    # for example in dataset: 
-    #     results = generator.generate(
-    #         prompts, max_gen_len=30, temperature=temperature, top_p=top_p)
     
 if __name__ == "__main__":
     fire.Fire(main)

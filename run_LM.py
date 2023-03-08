@@ -3,6 +3,7 @@
 
 from typing import *
 import os
+import re
 import sys
 import gzip
 import torch
@@ -13,6 +14,8 @@ import time
 import json
 
 import pandas as pd
+
+from tqdm import tqdm
 
 from pathlib import Path
 
@@ -130,9 +133,10 @@ def load_llama(
     model_args = ModelArgs(
         max_seq_len=max_seq_len, 
         max_batch_size=max_batch_size,
-        vocab_size=tokenizer.n_words, 
         **params
     )
+    
+    model_args.vocab_size = tokenizer.n_words
     
     logger.info('Creating transformer...')
     torch.set_default_tensor_type(torch.BFloat16Tensor)
@@ -146,6 +150,8 @@ def load_llama(
     logger.info('Creating LLaMA generator...')
     with Timer(logger.info):
         generator = LLaMA(model, tokenizer)
+    
+    setattr(generator, 'model_name_or_path', ckpt_dir)
     
     return generator
 
@@ -220,7 +226,8 @@ def preprocess_dataset(
 
 def evaluate_language_modeling(
     generator: LLaMA, 
-    dataset_path: str, 
+    dataset: torch.Tensor,
+    dataset_path: str,
     output_dir: str,
     max_batch_size: int = 1,
 ) -> None:
@@ -229,8 +236,6 @@ def evaluate_language_modeling(
     if os.path.exists(output_file):
         # return
         pass
-    
-    dataset = load_dataset(dataset_path)
     
     with gzip.open(dataset_path.replace('.txt.gz', '_metadata.json.gz'), 'rt', encoding='utf-8') as in_file:
         metadata = [json.loads(l) for l in in_file.readlines()]
@@ -246,8 +251,9 @@ def evaluate_language_modeling(
         
         # use this as a unique input identifier
         input_nums = range(n_observed_examples, n_observed_examples + n_examples_in_batch)
+        n_observed_examples += n_examples_in_batch
         
-        batch_metadata = metadata[max(0, n_observed_examples - n_examples_in_batch):n_observed_examples]
+        batch_metadata = metadata[(n_observed_examples - n_examples_in_batch):n_observed_examples]
         eval_tokens = [d['eval_tokens'] for d in batch_metadata]
         
         metrics.extend(evaluate_batch(
@@ -261,6 +267,9 @@ def evaluate_language_modeling(
     metrics = pd.DataFrame(metrics)
     
     metrics = metrics.assign(
+        model_name=re.sub('["\']', '', generator.model_name_or_path),
+        n_params=f'{round(sum(p.numel() for p in generator.model.parameters() if p.requires_grad)/1000000000)}B',
+        test_dataset=os.path.basename(dataset_path).replace('.txt.gz', ''),
         n_test_examples=len(dataset)
     )
     
@@ -343,7 +352,7 @@ def evaluate_lm_batch(
     batch_metadata: List[Dict],
 ) -> List[Dict]:
     with torch.no_grad():
-        batch_outputs = generator(tokens=inputs, start_pos=0)
+        batch_outputs = generator(tokens=inputs)
     
     batch_scores = torch.stack([t[:generator.tokenizer.n_words] for t in batch_outputs])
     batch_logprobs = F.log_softmax(batch_scores, dim=-1)
@@ -356,7 +365,7 @@ def evaluate_lm_batch(
             [
                 {
                     'item': input_num,
-                    'input_text': generator.tokenizer.decode(input_seq.tolist()),
+                    'input_text': generator.tokenizer.decode(input_seq[torch.where((input_seq != generator.tokenizer.pad_id).nonzero(as_tuple=True)[0])].tolist()),
                     'pred_token': generator.tokenizer.decode(torch.argmax(pred_token, dim=-1).tolist()),
                     'token': token,
                     'token_id': token_id,
@@ -398,6 +407,7 @@ def main(
     evaluate_language_modeling(
         generator=generator, 
         dataset=dataset, 
+        dataset_path=dataset_path,
         max_batch_size=max_batch_size,
         output_dir=output_dir,
     )

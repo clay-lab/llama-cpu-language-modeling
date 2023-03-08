@@ -16,4 +16,6 @@ torchrun \
 	--nproc_per_node 1 \
 	run_LM.py \
 	--ckpt_dir llama-checkpoints/7B \
-	--tokenizer_path llama-checkpoints/tokenizer.model
+	--tokenizer_path llama-checkpoints/tokenizer.model \
+    --dataset_path data/en_BC_92-RCPP/en_BC_92-RCPP.txt.gz \
+    --max_batch_size 2

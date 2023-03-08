@@ -50,7 +50,7 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int) -
 
     print("Loading model arguments...")
     model_args: ModelArgs = ModelArgs(
-        max_seq_len=1024, max_batch_size=32, **params)
+        max_seq_len=20, max_batch_size=2, **params)
 
     print("Creating tokenizer...")
     tokenizer = Tokenizer(model_path=tokenizer_path)
@@ -81,21 +81,16 @@ def main(ckpt_dir: str, tokenizer_path: str, temperature: float = 0.8, top_p: fl
         sys.stdout = open(os.devnull, 'w')
 
     generator = load(ckpt_dir, tokenizer_path, local_rank, world_size)
-    prompts = [input("Enter prompt: ")]
-    print("Starting generation with prompt:", prompts[0])
+    prompts = ['The key to the cabinets near the table', 'The key to the cabinets']
+    start_time = time.time()
+    results = generator.generate(
+        prompts, max_gen_len=1, temperature=temperature, top_p=top_p)
+    print(f"responded in {time.time() - start_time:.2f} seconds")
 
-    while True:
-        start_time = time.time()
-        results = generator.generate(
-            prompts, max_gen_len=30, temperature=temperature, top_p=top_p)
-        print(f"responded in {time.time() - start_time:.2f} seconds")
-
-        for result in results:
-            print(result)
-            print("\n==================================\n")
+    for result in results:
+        print(result)
+        print("\n==================================\n")
         
-        prompts = [input("Enter next prompt: ")]
-
 
 if __name__ == "__main__":
     fire.Fire(main)

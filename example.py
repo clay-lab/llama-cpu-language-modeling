@@ -20,8 +20,8 @@ def setup_model_parallel() -> Tuple[int, int]:
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
     world_size = int(os.environ.get("WORLD_SIZE", -1))
 
-    # torch.distributed.init_process_group("gloo")
-    # initialize_model_parallel(world_size)
+    torch.distributed.init_process_group("gloo")
+    initialize_model_parallel(world_size)
     # torch.cuda.set_device(local_rank)
 
     # seed must be the same in all processes
@@ -57,12 +57,12 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int) -
     model_args.vocab_size = tokenizer.n_words
 
     print("Creating transformer...")
-    torch.set_default_tensor_type(torch.BFloat16Tensor)
+    torch.set_default_tensor_type(torch.HalfTensor)
     model = Transformer(model_args)
 
     print("Loading checkpoint to model...", end="")
     _start_time = time.time()
-    torch.set_default_tensor_type(torch.BFloat16Tensor)
+    torch.set_default_tensor_type(torch.FloatTensor)
     model.load_state_dict(checkpoint, strict=False)
     print(f"done in {time.time() - _start_time:.2f} seconds")
 
@@ -81,10 +81,10 @@ def main(ckpt_dir: str, tokenizer_path: str, temperature: float = 0.8, top_p: fl
         sys.stdout = open(os.devnull, 'w')
 
     generator = load(ckpt_dir, tokenizer_path, local_rank, world_size)
-    prompts = ['The key to the cabinets near the table', 'The key to the cabinets']
+    prompts = ['The thing I like best is']
     start_time = time.time()
     results = generator.generate(
-        prompts, max_gen_len=1, temperature=temperature, top_p=top_p)
+        prompts, max_gen_len=5, temperature=temperature, top_p=top_p)
     print(f"responded in {time.time() - start_time:.2f} seconds")
 
     for result in results:

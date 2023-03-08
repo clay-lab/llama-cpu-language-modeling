@@ -65,7 +65,7 @@ def setup_model_parallel() -> Tuple[int, int]:
 
     # torch.distributed.init_process_group("gloo")
     # initialize_model_parallel(world_size)
-    # torch.cuda.set_device(local_rank)
+    # torch.set_device(local_rank)
 
     # seed must be the same in all processes
     torch.manual_seed(1)
@@ -139,12 +139,12 @@ def load_llama(
     model_args.vocab_size = tokenizer.n_words
     
     logger.info('Creating transformer...')
-    torch.set_default_tensor_type(torch.BFloat16Tensor)
+    torch.set_default_tensor_type(torch.HalfTensor)
     model = Transformer(model_args)
     
     logger.info('Loading checkpoint to model...')
     with Timer(logger.info):
-        torch.set_default_tensor_type(torch.BFloat16Tensor)
+        torch.set_default_tensor_type(torch.FloatTensor)
         model.load_state_dict(checkpoint, strict=False)
     
     logger.info('Creating LLaMA generator...')
@@ -169,7 +169,9 @@ def load_dataset(
     # since LLaMA models predict the next word
     dataset = [example.split(MASK_TOKEN, 1)[0].strip() for example in dataset]
     
-    return dataset
+    # return dataset
+    # for debugging
+    return ['The key to the cabinets on the table', 'The key to the cabinets']
 
 def preprocess_dataset(
     dataset: List[str], 
@@ -231,8 +233,8 @@ def evaluate_language_modeling(
     output_dir: str,
     max_batch_size: int = 1,
 ) -> None:
-    output_file = os.path.join(output_dir, 'language_modeling_results.csv.gz')
-    
+    output_file = os.path.join(output_dir, f'{os.path.split(generator.model_name_or_path)[-1]}.lm_results.csv.gz')
+       
     if os.path.exists(output_file):
         # return
         pass
@@ -389,7 +391,7 @@ def main(
     
     dataset = load_dataset(dataset_path=dataset_path)
     tokenizer = load_tokenizer(tokenizer_path=tokenizer_path)
-    
+    breakpoint()
     dataset = preprocess_dataset(dataset=dataset, tokenizer=tokenizer)
     
     max_seq_len = dataset.size()[-1]
@@ -403,7 +405,7 @@ def main(
         world_size=world_size,
     )
     
-    output_dir = os.path.join('outputs', os.path.split(ckpt_dir)[-1])
+    output_dir = os.path.join('outputs', os.path.split(dataset_path)[-1].replace('.txt.gz', ''))
     evaluate_language_modeling(
         generator=generator, 
         dataset=dataset, 

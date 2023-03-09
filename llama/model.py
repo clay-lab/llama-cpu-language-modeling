@@ -9,12 +9,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-import fairscale.nn.model_parallel.initialize as fs_init
-from fairscale.nn.model_parallel.layers import (
-    ParallelEmbedding,
-    RowParallelLinear,
-    ColumnParallelLinear,
-)
+
 
 from tqdm import tqdm
 import logging
@@ -30,11 +25,7 @@ class ModelArgs:
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     norm_eps: float = 1e-5
     
-    # for language modeling, we're just caring about the next token for now
     max_batch_size: int = 1
-    # TODO: we will need to set this dynamically based on the maximum length of an example
-    # in the dataset
-    # so load the dataset and tokenizer first
     max_seq_len: int = 32
 
 
@@ -53,8 +44,7 @@ class RMSNorm(torch.nn.Module):
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)
-                   [: (dim // 2)].float() / dim))
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)  # type: ignore
     freqs = torch.outer(t, freqs).float()  # type: ignore
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
@@ -65,8 +55,7 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
     assert 0 <= 1 < ndim
     assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim -
-             1 else 1 for i, d in enumerate(x.shape)]
+    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(*shape)
 
 
@@ -81,26 +70,6 @@ def apply_rotary_emb(
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
-
-    # # Split the real and imaginary parts of the query and key tensors
-    # xq_real, xq_imag = torch.chunk(xq, 2, dim=-1)
-    # xk_real, xk_imag = torch.chunk(xk, 2, dim=-1)
-
-    # # Apply the rotational embedding to each part separately
-    # freqs_cos = freqs_cis.cos()
-    # freqs_sin = freqs_cis.sin()
-
-    # xq_out_real = xq_real * freqs_cos - xq_imag * freqs_sin
-    # xq_out_imag = xq_real * freqs_sin + xq_imag * freqs_cos
-
-    # xk_out_real = xk_real * freqs_cos - xk_imag * freqs_sin
-    # xk_out_imag = xk_real * freqs_sin + xk_imag * freqs_cos
-
-    # # Combine the modified real and imaginary parts into complex tensors
-    # xq_out = torch.cat([xq_out_real, xq_out_imag], dim=-1)
-    # xk_out = torch.cat([xk_out_real, xk_out_imag], dim=-1)
-
-    # return xq_out, xk_out
 
 
 class Attention(nn.Module):
@@ -134,11 +103,11 @@ class Attention(nn.Module):
         self.cache_k = torch.zeros(
             (args.max_batch_size, args.max_seq_len,
              self.n_local_heads, self.head_dim)
-        )
+        ).cpu()
         self.cache_v = torch.zeros(
             (args.max_batch_size, args.max_seq_len,
              self.n_local_heads, self.head_dim)
-        )
+        ).cpu()
 
     def forward(
         self, 
@@ -153,35 +122,22 @@ class Attention(nn.Module):
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
-
-        # print("---- Converting to cpu to apply rotary embedding")
-        # xq = xq.to('cpu')
-        # xk = xk.to('cpu')
-        freqs_cis = freqs_cis.to('cpu')
-
-        # print("---- Applying rotary embedding")
         
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
-
-        # print("---- Converting back to mps to continue computation")
-        # xq = xq.to('mps')
-        # xk = xk.to('mps')
-        # freqs_cis = freqs_cis.to("mps")
-
+        
         self.cache_k = self.cache_k.to(xq)
         self.cache_v = self.cache_v.to(xq)
-
+        
         self.cache_k[:bsz, start_pos: start_pos + seqlen] = xk
         self.cache_v[:bsz, start_pos: start_pos + seqlen] = xv
         
         keys = self.cache_k[:bsz, : start_pos + seqlen]
         values = self.cache_v[:bsz, : start_pos + seqlen]
-
+        
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
-        scores = torch.matmul(xq, keys.transpose(2, 3)) / \
-            math.sqrt(self.head_dim)
+        scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
         if mask is not None:
             # (bs, n_local_heads, slen, cache_len + slen)
             scores = scores + mask
@@ -204,16 +160,15 @@ class FeedForward(nn.Module):
     ):
         super().__init__()
         hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = multiple_of * \
-            ((hidden_dim + multiple_of - 1) // multiple_of)
+        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
-        self.w1 = torch.nn.Linear(
+        self.w1 = nn.Linear(
             dim, hidden_dim, bias=False,
         )
-        self.w2 = torch.nn.Linear(
+        self.w2 = nn.Linear(
             hidden_dim, dim, bias=False,
         )
-        self.w3 = torch.nn.Linear(
+        self.w3 = nn.Linear(
             dim, hidden_dim, bias=False,
         )
 
@@ -234,7 +189,7 @@ class TransformerBlock(nn.Module):
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
-
+    
     def forward(
         self, 
         x: torch.Tensor, 
@@ -242,9 +197,7 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor, 
         mask: Optional[torch.Tensor]
     ):
-        h = x + \
-            self.attention.forward(self.attention_norm(
-                x), start_pos, freqs_cis, mask)
+        h = x + self.attention.forward(self.attention_norm(x), start_pos, freqs_cis, mask)
         out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out
 
@@ -255,42 +208,41 @@ class Transformer(nn.Module):
         self.params = params
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
-
+        
         logger.info("Creating embedding")
-        self.tok_embeddings = torch.nn.Embedding(
+        self.tok_embeddings = nn.Embedding(
             params.vocab_size, params.dim
         )
-
+        
         self.layers = torch.nn.ModuleList()
         logger.info(f"Creating transformer blocks ({params.n_layers})")
         for layer_id in tqdm(range(params.n_layers), total=params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
-
+        
         logger.info("Adding output layers")
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        
         self.output = nn.Linear(
             params.dim, params.vocab_size, bias=False
         )
-
+        
         logger.info("Precomputing frequencies")
         self.freqs_cis = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
         )
-
+    
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: int):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos: start_pos + seqlen]
-
+        
         mask = None
         if seqlen > 1:
-            mask = torch.full((1, 1, seqlen, seqlen),
-                              float("-inf"), device=tokens.device)
+            mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=tokens.device)
             mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
-
-        logger.info('Running layers')
+        
         for layer in tqdm(self.layers):
             h = layer(h, start_pos, freqs_cis, mask)
         

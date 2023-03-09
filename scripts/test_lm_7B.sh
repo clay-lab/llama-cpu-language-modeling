@@ -1,8 +1,8 @@
 #!/bin/bash
 
 
-#SBATCH --job-name=test-llama-lm
-#SBATCH --output=joblogs/test-llama-lm.log
+#SBATCH --job-name=test-llama-lm-7B
+#SBATCH --output=joblogs/test-llama-lm-7B.log
 #SBATCH --mem=32G
 #SBATCH --partition=day
 #SBATCH --time=01-00:00:00
@@ -14,9 +14,7 @@ source activate /gpfs/gibbs/project/frank/ref4/conda_envs/llama
 
 echo `date`
 
-torchrun \
-	--nproc_per_node 1 \
-	run_LM.py \
+python run_LM.py \
 	--ckpt_dir llama-checkpoints/7B \
 	--tokenizer_path llama-checkpoints/tokenizer.model \
     --dataset_path data/en_BC_92-RCPP/en_BC_92-RCPP.txt.gz \

@@ -93,35 +93,34 @@ class LLaMA:
         bsz = len(prompts)
         params = self.model.params
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
-
-        prompt_tokens = [self.tokenizer.encode(
-            x, bos=True, eos=False) for x in prompts]
-
+        
+        prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
+        
         min_prompt_size = min([len(t) for t in prompt_tokens])
         max_prompt_size = max([len(t) for t in prompt_tokens])
-
+        
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
-        logger.info(f"Forwarding {total_len} times")
-
-        tokens = torch.full(
-            (bsz, total_len), self.tokenizer.pad_id, device=torch.device("cpu")).long()
+        
+        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).cpu().long()
         
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t).long()
-
         input_text_mask = tokens != self.tokenizer.pad_id
+        
         start_pos = min_prompt_size
         prev_pos = 0
         
-        for cur_pos in tqdm(range(start_pos, total_len), total=len(list(range(start_pos, total_len)))):
+        steps = total_len - start_pos
+        
+        for cur_pos in tqdm(range(start_pos, total_len), total=steps):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
-
+            
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
             else:
                 next_token = torch.argmax(logits, dim=-1)
-
+            
             next_token = next_token.reshape(-1)
             # only replace token if prompt has already been generated
             next_token = torch.where(
@@ -129,7 +128,7 @@ class LLaMA:
             )
             tokens[:, cur_pos] = next_token
             prev_pos = cur_pos
-
+        
         decoded = []
         for i, t in enumerate(tokens.tolist()):
             # cut to max gen len

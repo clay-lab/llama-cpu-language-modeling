@@ -17,7 +17,7 @@ echo
 time python run_LM.py \
 	--ckpt_dir llama-checkpoints/7B \
 	--tokenizer_path llama-checkpoints/tokenizer.model \
-	--test_file data/en_FVN_02-simple/en_FVN_02-simple.txt.gz \
+	--dataset_path data/en_FVN_02-simple/en_FVN_02-simple.txt.gz \
 	--max_batch_size 2
 
 echo

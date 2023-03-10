@@ -62,7 +62,7 @@ SCRIPT_TEMPLATE: str = '\n'.join([
 	'time python run_LM.py \\',
 	'\t--ckpt_dir {MODEL} \\',
 	'\t--tokenizer_path llama-checkpoints/tokenizer.model \\',
-	'\t--test_file data/{DATASET}/{DATASET}.txt.gz \\',
+	'\t--dataset_path data/{DATASET}/{DATASET}.txt.gz \\',
 	'\t--max_batch_size 2',
 	'',
 	'echo',

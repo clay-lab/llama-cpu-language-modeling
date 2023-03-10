@@ -48,7 +48,7 @@ SCRIPT_TEMPLATE: str = '\n'.join([
 	'#SBATCH --job-name=llama-{MODEL_BASENAME}-{DATASET}',
 	'#SBATCH --output=joblogs/%x_%j.txt',
 	'#SBATCH --partition={PARTITION}',
-	'#SBATCH --mem={MEM}',
+	'#SBATCH --mem={MEM}G',
 	'#SBATCH --time={TIME}',
 	'#SBATCH --mail-type=END,FAIL,INVALID_DEPEND',
 	'',

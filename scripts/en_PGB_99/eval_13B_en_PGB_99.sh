@@ -3,7 +3,7 @@
 #SBATCH --job-name=llama-13B-en_PGB_99
 #SBATCH --output=joblogs/%x_%j.txt
 #SBATCH --partition=day
-#SBATCH --mem=128
+#SBATCH --mem=128G
 #SBATCH --time=01:00:00
 #SBATCH --mail-type=END,FAIL,INVALID_DEPEND
 

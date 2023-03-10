@@ -3,7 +3,7 @@
 #SBATCH --job-name=llama-65B-en_FVN_02
 #SBATCH --output=joblogs/%x_%j.txt
 #SBATCH --partition=bigmem
-#SBATCH --mem=640
+#SBATCH --mem=640G
 #SBATCH --time=04:00:00
 #SBATCH --mail-type=END,FAIL,INVALID_DEPEND
 

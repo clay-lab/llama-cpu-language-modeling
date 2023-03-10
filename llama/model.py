@@ -11,7 +11,6 @@ import torch.nn.functional as F
 
 
 
-from tqdm import tqdm
 import logging
 
 logger = logging.getLogger(__name__)
@@ -216,7 +215,7 @@ class Transformer(nn.Module):
         
         self.layers = torch.nn.ModuleList()
         logger.info(f"Creating transformer blocks ({params.n_layers})")
-        for layer_id in tqdm(range(params.n_layers), total=params.n_layers):
+        for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
         
         logger.info("Adding output layers")
@@ -243,7 +242,7 @@ class Transformer(nn.Module):
             mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=tokens.device)
             mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
         
-        for layer in tqdm(self.layers):
+        for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
         
         h = self.norm(h)

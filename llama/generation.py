@@ -8,7 +8,6 @@ import torch
 from llama.tokenizer import Tokenizer
 from llama.model import Transformer
 
-from tqdm import tqdm
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,7 @@ class LLaMA:
         
         keep_logits = torch.tensor(())
         
-        for cur_pos in tqdm(range(start_pos, total_len), total=len(list(range(start_pos, total_len)))):            
+        for cur_pos in range(start_pos, total_len):            
             _logits = self.model.forward(tokens=tokens[:, prev_pos:cur_pos], start_pos=prev_pos)
             
             # this gets run the first time through the loop
@@ -110,9 +109,7 @@ class LLaMA:
         start_pos = min_prompt_size
         prev_pos = 0
         
-        steps = total_len - start_pos
-        
-        for cur_pos in tqdm(range(start_pos, total_len), total=steps):
+        for cur_pos in range(start_pos, total_len):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
             
             if temperature > 0:

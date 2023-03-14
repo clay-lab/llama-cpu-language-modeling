@@ -29,7 +29,7 @@ MODEL_PARAMS: Dict[str,Dict[str,str]] = {
 	'llama-checkpoints/65B': {
 		'MEM': 288,
 		'PARTITION': 'bigmem',
-		'TIME': '08:00:00',
+		'TIME': '12:00:00',
 	}
 }
 

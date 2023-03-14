@@ -127,10 +127,9 @@ def load_llama(
         "rope": None,
     }
     
-    logger.info('Loading checkpoint to model...')
+    logger.info('Loading checkpoints to model...')
     with Timer(logger.info):
-        for i, ckpt in enumerate(checkpoints):
-            logger.info(f"Loading checkpoint {i}")
+        for i, ckpt in tqdm(enumerate(checkpoints), total=len(checkpoints)):
             checkpoint = torch.load(ckpt, map_location="cpu")
             for parameter_name, parameter in model.named_parameters():
                 short_name = parameter_name.split(".")[-2]

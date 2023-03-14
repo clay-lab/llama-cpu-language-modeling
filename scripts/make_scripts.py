@@ -12,24 +12,24 @@ MODELS: Set[str] = set(
 
 MODEL_PARAMS: Dict[str,Dict[str,str]] = {
 	'llama-checkpoints/7B': {
-		'MEM': 64,
+		'MEM': 48,
 		'PARTITION': 'day',
 		'TIME': '01:00:00',
 	},
 	'llama-checkpoints/13B': {
-		'MEM': 128,
+		'MEM': 78,
 		'PARTITION': 'day',
-		'TIME': '01:00:00',
-	},
-	'llama-checkpoints/30B': {
-		'MEM': 320,
-		'PARTITION': 'bigmem',
 		'TIME': '02:00:00',
 	},
-	'llama-checkpoints/65B': {
-		'MEM': 640,
+	'llama-checkpoints/30B': {
+		'MEM': 169,
 		'PARTITION': 'bigmem',
 		'TIME': '04:00:00',
+	},
+	'llama-checkpoints/65B': {
+		'MEM': 288,
+		'PARTITION': 'bigmem',
+		'TIME': '08:00:00',
 	}
 }
 

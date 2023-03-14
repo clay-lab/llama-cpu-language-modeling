@@ -3,8 +3,8 @@
 #SBATCH --job-name=llama-30B-en_FVN_02
 #SBATCH --output=joblogs/%x_%j.txt
 #SBATCH --partition=bigmem
-#SBATCH --mem=320G
-#SBATCH --time=02:00:00
+#SBATCH --mem=169G
+#SBATCH --time=04:00:00
 #SBATCH --mail-type=END,FAIL,INVALID_DEPEND
 
 module load miniconda

@@ -172,3 +172,5 @@ outputs
 llama-checkpoints/
 llama-checkpoints
 joblogs/
+scripts/*.txt
+scripts/**/*.txt

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#SBATCH --job-name=llama-13B-en_FMP_23-NPI
+#SBATCH --job-name=llama-7B-en_FMP_23-NPI-exp5
 #SBATCH --output=joblogs/%x_%j.txt
 #SBATCH --partition=day
-#SBATCH --mem=78G
-#SBATCH --time=02:00:00
+#SBATCH --mem=48G
+#SBATCH --time=01:00:00
 #SBATCH --mail-type=END,FAIL,INVALID_DEPEND
 
 module load miniconda
@@ -15,9 +15,9 @@ echo "Starting job at `date`"
 echo
 
 time python run_LM.py \
-	--ckpt_dir llama-checkpoints/13B \
+	--ckpt_dir llama-checkpoints/7B \
 	--tokenizer_path llama-checkpoints/tokenizer.model \
-	--dataset_path data/en_FMP_23-NPI/phillips2021_exp1.txt.gz \
+	--dataset_path data/en_FMP_23-NPI-exp5/en_FMP_23-NPI-exp5.txt.gz \
 	--max_batch_size 2
 
 echo

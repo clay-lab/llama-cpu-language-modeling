@@ -36,6 +36,9 @@ MODEL_PARAMS: Dict[str,Dict[str,str]] = {
 DATASETS: Set[str] = {
 	'en_BC_92-CCPP_SL',
 	'en_BC_92-RCPP',
+	'en_FMP_23-NPI-exp1',
+	'en_FMP_23-NPI-exp3',
+	'en_FMP_23-NPI-exp5',
 	'en_FVN_02',
 	'en_FVN_02-simple',
 	'en_VN_98-decl',

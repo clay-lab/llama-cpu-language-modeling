@@ -286,6 +286,7 @@ def evaluate_language_modeling(
     
     metrics = metrics.assign(
         model_name=re.sub('["\']', '', generator.model_name_or_path),
+        architecture='decoder-only',
         n_params=f'{round(sum(p.numel() for p in generator.model.parameters() if p.requires_grad)/1000000000)}B',
         test_dataset=os.path.basename(dataset_path).replace('.txt.gz', ''),
         n_test_examples=len(dataset)

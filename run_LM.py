@@ -438,7 +438,7 @@ def evaluate_lm_batch(
                 {
                     'item': input_num,
                     'input_text': generator.tokenizer.decode(input_seq[torch.where((input_seq != generator.tokenizer.pad_id).nonzero(as_tuple=True)[0])].tolist()),
-                    'pred_token': generator.tokenizer.decode(torch.argmax(pred_token, dim=-1).tolist()),
+                    'pred_seq': generator.tokenizer.decode(torch.argmax(pred_token, dim=-1).tolist()), # we use "pred_seq" for consistency with other models
                     'token': token,
                     'token_id': token_id,
                     'logprob': score[token_id].item(),

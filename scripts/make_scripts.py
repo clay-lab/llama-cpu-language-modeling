@@ -41,8 +41,12 @@ DATASETS: Set[str] = {
 	'en_FMP_23-NPI-exp5',
 	'en_FVN_02',
 	'en_FVN_02-simple',
-	'en_VN_98-decl',
 	'en_PGB_99',
+	'en_VN_98-decl',
+	'en_WLP_09-exp1',
+	'en_WLP_09-exp3',
+	'en_WLP_09-exp4',
+	'en_WLP_09-exp5',
 }
 
 SCRIPT_TEMPLATE: str = '\n'.join([

@@ -55,7 +55,7 @@ def submit_batched_jobs(name, args, batches):
 		# find the deepest common directory among the scripts
 		dirname = set(os.path.dirname(script) for script in files)
 		while len(dirname) > 1:
-			dirname = set(os.path.dirname(d) for d in files)
+			dirname = set(os.path.dirname(d) for d in dirname)
 		
 		dirname = next(iter(dirname))
 		

@@ -55,7 +55,7 @@ def submit_batched_jobs(name, args, batches):
 		# find the deepest common directory among the scripts
 		dirname = set(os.path.dirname(script) for script in files)
 		while len(dirname) > 1:
-			dirname = set(os.path.dirname(d) for d in files)
+			dirname = set(os.path.dirname(d) for d in dirname)
 		
 		dirname = next(iter(dirname))
 		
@@ -132,16 +132,23 @@ def sbatch_all(s):
 	batches = find_batches(globbed)
 	
 	try:
+		_ = os.system('module load dSQ')
 		submit_batched_jobs(name=name, args=args, batches=batches)
 	except KeyboardInterrupt:
 		print('User terminated.')
 		sys.exit(0)
 	except Exception:
-		print('Error submitting jobs using dSQ. Submitting individually.')
-		for script in globbed:
-			x = subprocess.Popen(['sbatch', *args, script])
-			time.sleep(1)
-			x.kill()
+		response = input('Error submitting jobs using dSQ. Submit individually (y/n)? ')
+		while response not in {'y', 'n'}:
+			response = input('Invalid option. Please enter one of "y", "n": ')	
+		
+		if response == 'y':
+			for script in globbed:
+				x = subprocess.Popen(['sbatch', *args, script])
+				time.sleep(1)
+				x.kill()
+		elif response == 'n':
+			pass
 
 if __name__ == '__main__':
 	args = [arg for arg in sys.argv[1:] if not arg == 'sball.py']
